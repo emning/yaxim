@@ -8,6 +8,9 @@ import org.yaxim.androidclient.MainWindow;
 import org.yaxim.androidclient.R;
 import org.yaxim.androidclient.exceptions.YaximXMPPException;
 import org.yaxim.androidclient.util.ConnectionState;
+import org.yaxim.androidclient.util.StatusMode;
+import org.yaxim.androidclient.util.PreferenceConstants;
+import org.yaxim.androidclient.service.YaximScreenReceiver;
 
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -16,12 +19,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
+import android.preference.PreferenceManager;
 
 public class XMPPService extends GenericService {
 
@@ -93,6 +98,12 @@ public class XMPPService extends GenericService {
 					PendingIntent.FLAG_UPDATE_CURRENT);
 		registerReceiver(mAlarmReceiver, new IntentFilter(RECONNECT_ALARM));
 
+		// handle screen on and screen off
+		IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
+		filter.addAction(Intent.ACTION_SCREEN_OFF);
+		BroadcastReceiver mReceiver = new YaximScreenReceiver();
+		registerReceiver(mReceiver, filter);
+
 		// for the initial connection, check if autoConnect is set
 		mConnectionDemanded.set(mConfig.autoConnect);
 		YaximBroadcastReceiver.initNetworkStatus(getApplicationContext());
@@ -107,6 +118,7 @@ public class XMPPService extends GenericService {
 		}
 
 		mServiceNotification = ServiceNotification.getInstance();
+
 	}
 
 	@Override
@@ -146,6 +158,25 @@ public class XMPPService extends GenericService {
 		mConnectionDemanded.set(mConfig.autoConnect);
 		doConnect();
 		return START_STICKY;
+	}
+
+	@Override
+	public void onStart(Intent intent, int startId) {
+		boolean screenOn = intent.getBooleanExtra("screen_state", false);
+
+		SharedPreferences.Editor prefedit = PreferenceManager
+			.getDefaultSharedPreferences(this).edit();
+
+		if (!screenOn) {
+			prefedit.putString(PreferenceConstants.STATUS_MODE, StatusMode.away.name());
+		} else {
+			prefedit.putString(PreferenceConstants.STATUS_MODE, StatusMode.available.name());
+		}
+		prefedit.putString(PreferenceConstants.STATUS_MESSAGE, "");
+		prefedit.putString(PreferenceConstants.PRIORITY, String.valueOf(1));
+                prefedit.commit();
+		mSmackable.setStatusFromConfig();
+		updateServiceNotification();
 	}
 
 	private void createServiceChatStub() {
